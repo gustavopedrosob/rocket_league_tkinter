@@ -1,10 +1,37 @@
-from tkinter import Tk
-from rocket_league_tkinter.item import Item
-from rocket_league_tkinter.inventory import Inventory
+import asyncio
+import datetime
+import tkinter as tk
+import rocket_league_utils as rl_utils
+import rocket_league_gameflip_api as rl_gameflip_api
+import rocket_league_tkinter as rl_tk
+import bakkes_mod_inventory
+import typing
+from rocket_league_utils import rarity_utils, slot_utils
 
-i = Tk()
-inventory = Inventory(i, 6, [])
-inventory.add_item("48d394e52f1585159717.png", "Rocket League Esports [Breakout]", "Import", "Body", 20000, 'Pink', "Striker", 100, 200)
-inventory.add_item("dingo.png", "Dingo", "Import", "Body", 1)
-inventory.get_widget().pack()
-i.mainloop()
+
+def gameflip_filter(item: bakkes_mod_inventory.Item) -> bool:
+    return rarity_utils.is_valid(item.rarity) and not item.trade_lock
+
+
+def main():
+    gameflip_api = rl_gameflip_api.RocketLeagueGameflipAPI()
+    inventory = bakkes_mod_inventory.read_inventory()
+    inventory = tuple(filter(lambda item_: gameflip_filter(item_), inventory))
+    window = tk.Tk()
+    tk_inventory = rl_tk.Inventory(window)
+    items = [rl_utils.Item(item.name, item.slot, item.rarity, item.quantity, item.blueprint, item.serie,
+                           item.trade_lock, item.platform, datetime.datetime.now(), color=item.color,
+                           certified=item.certified) for item in inventory]
+    tk_inventory.add_items(items, gameflip_api)
+    tk_inventory.pack()
+    window.mainloop()
+
+
+def item_window():
+    gameflip_api = rl_gameflip_api.RocketLeagueGameflipAPI()
+    window = rl_tk.ItemWindow("Adicionar Item", gameflip_api)
+    window.mainloop()
+
+
+if __name__ == '__main__':
+    main()
