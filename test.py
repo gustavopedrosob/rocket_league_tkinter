@@ -22,7 +22,7 @@ def main():
     items = [rl_utils.Item(item.name, item.slot, item.rarity, item.quantity, item.blueprint, item.serie,
                            item.trade_lock, item.platform, datetime.datetime.now(), color=item.color,
                            certified=item.certified) for item in inventory]
-    tk_inventory.add_items(items, gameflip_api)
+    tk_inventory.slots.add_items(items, gameflip_api)
     tk_inventory.pack()
     window.mainloop()
 
@@ -34,4 +34,4 @@ def item_window():
 
 
 if __name__ == '__main__':
-    main()
+    item_window()
