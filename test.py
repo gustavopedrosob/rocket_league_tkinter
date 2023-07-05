@@ -18,11 +18,11 @@ def main():
     inventory = bakkes_mod_inventory.read_inventory()
     inventory = tuple(filter(lambda item_: gameflip_filter(item_), inventory))
     window = tk.Tk()
-    tk_inventory = rl_tk.Inventory(window)
+    tk_inventory = rl_tk.Inventory(window, gameflip_api)
     items = [rl_utils.Item(item.name, item.slot, item.rarity, item.quantity, item.blueprint, item.serie,
                            item.trade_lock, item.platform, datetime.datetime.now(), color=item.color,
                            certified=item.certified) for item in inventory]
-    tk_inventory.slots.add_items(items, gameflip_api)
+    tk_inventory.slots.add_items(items)
     tk_inventory.pack()
     window.mainloop()
 
@@ -34,4 +34,4 @@ def item_window():
 
 
 if __name__ == '__main__':
-    item_window()
+    main()

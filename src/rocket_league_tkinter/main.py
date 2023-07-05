@@ -54,13 +54,13 @@ def generate_gradient(color_1: tuple[int, int, int, int], color_2: tuple[int, in
 class ScrollableFrame(ttk.Frame):
     def __init__(self, container, height: int, width: int, *args, **kwargs):
         self.frame = ttk.Frame(container)
-        canvas = tk.Canvas(self.frame, height=height, width=width)
-        self.scrollbar = ttk.Scrollbar(self.frame, orient=tk.VERTICAL, command=canvas.yview)
-        super().__init__(canvas, height=height, width=width)
-        self.bind("<Configure>", lambda _: canvas.configure(scrollregion=canvas.bbox(tk.ALL)))
-        canvas.create_window((0, 0), window=self, anchor=tk.NW)
-        canvas.configure(yscrollcommand=self.scrollbar.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.canvas = tk.Canvas(self.frame, height=height, width=width)
+        self.scrollbar = ttk.Scrollbar(self.frame, orient=tk.VERTICAL, command=self.canvas.yview)
+        super().__init__(self.canvas, height=height, width=width)
+        self.bind("<Configure>", lambda _: self.canvas.configure(scrollregion=self.canvas.bbox(tk.ALL)))
+        self.canvas.create_window((0, 0), window=self, anchor=tk.NW)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
 
@@ -90,6 +90,7 @@ class ShowItem(tk.Canvas, rl_utils.Item):
         self._processed_image = None
         self.style = style
         self._gameflip_api = gameflip_api
+        self.loaded_image = False
         trade_lock_size = int(style.size * 0.15)
         trade_lock_image = self.trade_lock_image.resize((trade_lock_size, trade_lock_size))
         self._trade_lock_image = ImageTk.PhotoImage(trade_lock_image)
@@ -107,7 +108,6 @@ class ShowItem(tk.Canvas, rl_utils.Item):
                          tags="notfound")
         rl_utils.Item.__init__(self, name, slot, rarity, quantity, blueprint, serie, trade_lock, platform, acquired,
                                favorite, archived, color, certified)
-        self.update_image()
 
     @property
     def rarity(self):
@@ -118,13 +118,8 @@ class ShowItem(tk.Canvas, rl_utils.Item):
         if "_rarity" in dir(self) and rarity_utils.compare(self._rarity, rarity):
             pass
         else:
-            if self._base_image is not None:
-                with contextlib.suppress(KeyError):
-                    self._gradient = self.generate_gradient_by_rarity(rarity, self.style.size)
-                    self._processed_image = ImageTk.PhotoImage(
-                        self.process_image(self._base_image, self.name, self.style.size,
-                                           self._gradient))
-                    self.itemconfigure("image", image=self._processed_image)
+            with contextlib.suppress(KeyError):
+                self._gradient = self.generate_gradient_by_rarity(rarity, self.style.size)
         self._rarity = rarity
 
     @property
@@ -182,16 +177,15 @@ class ShowItem(tk.Canvas, rl_utils.Item):
         self.itemconfigure("name", text=name, state=tk.NORMAL)
         self._name = name
 
-    def update_image(self):
-        try:
-            self._base_image = asyncio.run(self.get_photo(self, self._gameflip_api, self.style.size))
-        except rl_utils.ItemNotFound:
-            self.set_state("notfound")
+    def update_image(self, base_image=None):
+        if base_image:
+            self._base_image = base_image
         else:
-            self.set_state("normal")
-            self._processed_image = ImageTk.PhotoImage(self.process_image(self._base_image, self.name, self.style.size,
-                                                                          self._gradient))
-            self.itemconfigure("image", image=self._processed_image)
+            self._base_image = asyncio.run(self.get_photo(self, self._gameflip_api, self.style.size))
+        self.set_state("normal")
+        self._processed_image = ImageTk.PhotoImage(self.process_image(self._base_image, self.name, self.style.size,
+                                                                      self._gradient))
+        self.itemconfigure("image", image=self._processed_image)
 
     def set_state(self, state: typing.Literal["notfound", "normal"]):
         if state == "normal":
@@ -225,7 +219,7 @@ class ShowItem(tk.Canvas, rl_utils.Item):
             return generate_gradient(base, top, size, size)
 
     @staticmethod
-    def process_image(base_image: Image.Image, name: str, size: int = 125, gradient = None):
+    def process_image(base_image: Image.Image, name: str, size: int = 125, gradient=None):
         start_time = datetime.datetime.now()
         print(f"Processing item {name} image.")
         image = Image.new("RGB", (size, size), (0, 0, 0))
@@ -372,13 +366,38 @@ class ItemWindow(tk.Toplevel):
 
 
 class Slots(ScrollableFrame):
-    def __init__(self, master, columns: int = 7, rows: int = 7):
+    def __init__(self, master, gameflip_api, columns: int = 7, rows: int = 7):
+        self.gameflip_api = gameflip_api
         self.columns = columns
         self.rows = rows
         self.items = []
         self.current_filter = []
         super().__init__(master, 600, 900)
+        self.scrollbar.bind("<ButtonRelease-1>", self.on_release_scrollbar)
         self.frame.pack()
+
+    def on_release_scrollbar(self, event):
+        async def get_images():
+            return await asyncio.gather(*self.get_photos(items_able_to_load))
+
+        items_able_to_load = self.get_items_able_to_load()
+        base_photos = asyncio.run(get_images())
+        items_and_base_photos = [(item, photo) for item, photo in zip(items_able_to_load, base_photos)
+                                 if photo is not None]
+        for item, image in items_and_base_photos:
+            item.update_image(image)
+            item.loaded_image = True
+
+    def get_items_able_to_load(self):
+        items_able_to_load = []
+        for item in self.items:
+            y1 = item.winfo_rooty()
+            y2 = item.winfo_rooty() + item.winfo_height()
+            canvasy1 = self.canvas.winfo_rooty()
+            canvasy2 = self.canvas.winfo_rooty() + self.canvas.winfo_height()
+            if y1 > canvasy1 and y2 < canvasy2 and not item.loaded_image:
+                items_able_to_load.append(item)
+        return items_able_to_load
 
     def insert_items_in_grid(self, items: typing.Iterable[Item]):
         for index, item in enumerate(items):
@@ -393,29 +412,20 @@ class Slots(ScrollableFrame):
         for item in self.items:
             item.grid_forget()
 
-    def add_item(self, item: rl_utils.Item, gameflip_api: rl_gameflip_api.RocketLeagueGameflipAPI, image):
-        tk_item = Item(self, gameflip_api, item.name, item.slot, item.rarity, item.quantity, item.blueprint,
+    def add_item(self, item: rl_utils.Item):
+        tk_item = Item(self, self.gameflip_api, item.name, item.slot, item.rarity, item.quantity, item.blueprint,
                        item.serie, item.trade_lock, item.platform, item.acquired, item.favorite, item.archived,
-                       item.color, item.certified, base_image=image)
+                       item.color, item.certified)
         self.items.append(tk_item)
 
-    def add_items(self, items: typing.Iterable[rl_utils.Item], gameflip_api: rl_gameflip_api.RocketLeagueGameflipAPI):
-        async def get_photos():
-            return await asyncio.gather(*self.get_photos(items, gameflip_api))
-
-        start_time = datetime.datetime.now()
-        base_photos = asyncio.run(get_photos())
-        items_and_base_photos = [(item, photo) for item, photo in zip(items, base_photos) if photo is not None]
-        for item_and_base_photo in items_and_base_photos:
-            self.add_item(item_and_base_photo[0], gameflip_api, (item_and_base_photo[1]))
-        self.insert_items_in_grid(self.items)
-        finish_time = datetime.datetime.now()
-        print(f"Added all items in {finish_time - start_time}")
-
-    @staticmethod
-    def get_photos(items: typing.Iterable[rl_utils.Item], gameflip_api: rl_gameflip_api.RocketLeagueGameflipAPI):
+    def add_items(self, items: typing.Iterable[rl_utils.Item]):
         for item in items:
-            yield Slots.get_photo(item, gameflip_api)
+            self.add_item(item)
+        self.insert_items_in_grid(self.items)
+
+    def get_photos(self, items: typing.Iterable[rl_utils.Item]):
+        for item in items:
+            yield Slots.get_photo(item, self.gameflip_api)
 
     @staticmethod
     async def get_photo(item, gameflip_api):
@@ -430,7 +440,7 @@ class Inventory(tk.Frame):
                     "Quantity": lambda tk_item: tk_item.quantity,
                     "Series": lambda tk_item: tk_item.serie}
 
-    def __init__(self, master: typing.Union[tk.Widget, tk.Tk]):
+    def __init__(self, master: typing.Union[tk.Widget, tk.Tk], gameflip_api):
         super().__init__(master)
         filters_frame = tk.Frame(self)
         filters_frame.pack(padx=25, pady=25)
@@ -454,7 +464,7 @@ class Inventory(tk.Frame):
         self.sort_by.grid(row=1, column=5)
         filters_frame.grid_columnconfigure(tk.ALL, pad=5.0)
         self.name_filter.bind("<KeyRelease>", lambda _: self.on_filter_or_sort())
-        self.slots = Slots(self)
+        self.slots = Slots(self, gameflip_api)
         for filter_ in (self.slot_filter, self.color_filter, self.certified_filter, self.rarity_filter,
                         self.sort_by):
             filter_.bind("<<ComboboxSelected>>", lambda _: self.on_filter_or_sort())
@@ -485,5 +495,5 @@ class Inventory(tk.Frame):
 class Trade(tk.Frame):
     def __init__(self, items: typing.Iterable[rl_utils.Item], gameflip_api: rl_gameflip_api.RocketLeagueGameflipAPI):
         super().__init__()
-        self.slots = Slots(self)
-        self.slots.add_items(items, gameflip_api)
+        self.slots = Slots(self, gameflip_api)
+        self.slots.add_items(items)
