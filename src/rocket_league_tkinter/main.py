@@ -373,10 +373,14 @@ class Slots(ScrollableFrame):
         self.items = []
         self.current_filter = []
         super().__init__(master, 600, 900)
-        self.scrollbar.bind("<ButtonRelease-1>", self.on_release_scrollbar)
+        self.scrollbar.bind("<ButtonRelease-1>", lambda event: self.load_items_able_to_load())
+        self.scrollbar.bind("<MouseWheel>", lambda event: self.load_items_able_to_load())
+        self.scrollbar.bind("<Map>", lambda event: self.load_items_able_to_load())
         self.frame.pack()
 
-    def on_release_scrollbar(self, event):
+    def load_items_able_to_load(self):
+        print("tried to load items")
+
         async def get_images():
             return await asyncio.gather(*self.get_photos(items_able_to_load))
 
