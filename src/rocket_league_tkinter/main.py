@@ -197,6 +197,12 @@ class ShowItem(tk.Canvas, rl_utils.Item):
             self.itemconfigure("image", state=tk.HIDDEN)
             self.itemconfigure("notfound", state=tk.NORMAL)
 
+    def get_state(self) -> typing.Literal["notfound", "normal"]:
+        if self.itemcget("image", "state") == tk.NORMAL:
+            return "normal"
+        else:
+            return "notfound"
+
     @staticmethod
     async def get_photo(item: rl_utils.ReprItem,
                         gameflip_api: rl_gameflip_api.RocketLeagueGameflipAPI, size: int = 125):
@@ -379,8 +385,6 @@ class Slots(ScrollableFrame):
         self.frame.pack()
 
     def load_items_able_to_load(self):
-        print("tried to load items")
-
         async def get_images():
             return await asyncio.gather(*self.get_photos(items_able_to_load))
 
@@ -390,6 +394,7 @@ class Slots(ScrollableFrame):
                                  if photo is not None]
         for item, image in items_and_base_photos:
             item.update_image(image)
+        for item in items_able_to_load:
             item.loaded_image = True
 
     def get_items_able_to_load(self):
@@ -466,12 +471,24 @@ class Inventory(tk.Frame):
         tk.Label(filters_frame, text="Sort by").grid(row=0, column=5, sticky=tk.W)
         self.sort_by = ttk.Combobox(filters_frame, values=("",) + tuple(self.sort_options.keys()))
         self.sort_by.grid(row=1, column=5)
+        self.no_photo_items_var = tk.BooleanVar(value=False)
+        self.no_photo_items_filter = ttk.Checkbutton(filters_frame, text="Show no photo items",
+                                                     variable=self.no_photo_items_var)
+        self.no_photo_items_filter.grid(row=0, column=6, rowspan=2)
         filters_frame.grid_columnconfigure(tk.ALL, pad=5.0)
         self.name_filter.bind("<KeyRelease>", lambda _: self.on_filter_or_sort())
+        self.no_photo_items_var.trace_add("write", lambda var, index, mode: self.on_filter_or_sort())
         self.slots = Slots(self, gameflip_api)
         for filter_ in (self.slot_filter, self.color_filter, self.certified_filter, self.rarity_filter,
                         self.sort_by):
             filter_.bind("<<ComboboxSelected>>", lambda _: self.on_filter_or_sort())
+        self.slots.scrollbar.bind("<ButtonRelease-1>", lambda event: self.on_scroll())
+        self.slots.scrollbar.bind("<MouseWheel>", lambda event: self.on_scroll())
+        self.slots.scrollbar.bind("<Map>", lambda event: self.on_scroll())
+
+    def on_scroll(self):
+        self.slots.load_items_able_to_load()
+        self.on_filter_or_sort()
 
     def on_filter_or_sort(self):
         self.slots.current_filter = self.slots.items
@@ -487,13 +504,23 @@ class Inventory(tk.Frame):
         add_attribute_filter(self.color_filter.get(), "color", color_utils.is_exactly)
         add_attribute_filter(self.certified_filter.get(), "certified", certified_utils.is_exactly)
         add_attribute_filter(self.rarity_filter.get(), "rarity", rarity_utils.is_exactly)
+        if not self.no_photo_items_var.get():
+            self.slots.current_filter = filter(self.filter_no_photo_items, self.slots.current_filter)
         items = list(self.slots.current_filter)
         sort = self.sort_by.get()
         if sort:
             items.sort(key=self.sort_options[sort])
+
         self.slots.remove_items_in_grid()
         self.slots.insert_items_in_grid(items)
         self.slots.scrollbar.set(0, 0)
+
+    @staticmethod
+    def filter_no_photo_items(tk_item: Item):
+        if tk_item.loaded_image and tk_item.get_state() == "notfound":
+            return False
+        else:
+            return True
 
 
 class Trade(tk.Frame):
