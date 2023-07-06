@@ -104,8 +104,8 @@ class ShowItem(tk.Canvas, rl_utils.Item):
         self.create_text(int(style.size * 0.95), int(style.size * 0.05), anchor=tk.NE, font=style.font, fill="white",
                          tags=("quantity", "attribute"))
         self.create_image(5, 5, anchor=tk.NW, image=self._trade_lock_image, tags=("trade_lock", "attribute"))
-        self.create_text(style.size / 2, style.size / 2, text="Imagem não encontrada.", justify=tk.CENTER,
-                         tags="notfound")
+        self.create_text(style.size / 2, style.size / 2, width=style.size, text="Imagem não encontrada.",
+                         justify=tk.CENTER, tags="notfound")
         rl_utils.Item.__init__(self, name, slot, rarity, quantity, blueprint, serie, trade_lock, platform, acquired,
                                favorite, archived, color, certified)
 
