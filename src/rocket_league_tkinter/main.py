@@ -95,6 +95,7 @@ class ShowItem(tk.Canvas, rl_utils.Item):
         trade_lock_image = self.trade_lock_image.resize((trade_lock_size, trade_lock_size))
         self._trade_lock_image = ImageTk.PhotoImage(trade_lock_image)
         super().__init__(master, width=style.size, height=style.size)
+        self.create_rectangle(0, 0, self.style.size, self.style.size, fill="black")
         self.create_image(0, 0, anchor=tk.NW, tags="image")
         self.create_text(style.size / 2, int(style.size * 0.1), font=style.font, fill="white", justify=tk.CENTER,
                          tags=("name", "attribute"))
@@ -105,7 +106,7 @@ class ShowItem(tk.Canvas, rl_utils.Item):
                          tags=("quantity", "attribute"))
         self.create_image(5, 5, anchor=tk.NW, image=self._trade_lock_image, tags=("trade_lock", "attribute"))
         self.create_text(style.size / 2, style.size / 2, width=style.size, text="Imagem não encontrada.",
-                         justify=tk.CENTER, tags="notfound")
+                         justify=tk.CENTER, tags="notfound", fill="white")
         rl_utils.Item.__init__(self, name, slot, rarity, quantity, blueprint, serie, trade_lock, platform, acquired,
                                favorite, archived, color, certified)
 
