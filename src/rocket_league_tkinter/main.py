@@ -377,7 +377,6 @@ class Slots(ScrollableFrame):
         self.columns = columns
         self.rows = rows
         self.items = []
-        self.current_filter = []
         super().__init__(master, 600, 900)
         self.scrollbar.bind("<ButtonRelease-1>", lambda event: self.load_items_able_to_load())
         self.scrollbar.bind("<MouseWheel>", lambda event: self.load_items_able_to_load())
@@ -410,16 +409,9 @@ class Slots(ScrollableFrame):
 
     def insert_items_in_grid(self, items: typing.Iterable[Item]):
         for index, item in enumerate(items):
-            self.insert_item(index, item)
-
-    def insert_item(self, index: int, item: Item):
-        column = index % self.columns
-        row = index // self.rows
-        item.grid(column=column, row=row)
-
-    def remove_items_in_grid(self):
-        for item in self.items:
-            item.grid_forget()
+            column = index % self.columns
+            row = index // self.rows
+            item.grid(column=column, row=row)
 
     def add_item(self, item: rl_utils.Item):
         tk_item = Item(self, self.gameflip_api, item.name, item.slot, item.rarity, item.quantity, item.blueprint,
@@ -450,35 +442,37 @@ class Inventory(tk.Frame):
                     "Series": lambda tk_item: tk_item.serie}
 
     def __init__(self, master: typing.Union[tk.Widget, tk.Tk], gameflip_api):
+        self.filter_results = {}
         super().__init__(master)
         filters_frame = tk.Frame(self)
         filters_frame.pack(padx=25, pady=25)
         tk.Label(filters_frame, text="Name").grid(row=0, column=0, sticky=tk.W)
-        self.name_filter = tk.Entry(filters_frame)
+        self.name_filter = tk.Entry(filters_frame, name="name")
         self.name_filter.grid(row=1, column=0)
         tk.Label(filters_frame, text="Slot").grid(row=0, column=1, sticky=tk.W)
-        self.slot_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.SLOTS)
+        self.slot_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.SLOTS, name="slot")
         self.slot_filter.grid(row=1, column=1)
         tk.Label(filters_frame, text="Color").grid(row=0, column=2, sticky=tk.W)
-        self.color_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.COLORS)
+        self.color_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.COLORS, name="color")
         self.color_filter.grid(row=1, column=2)
         tk.Label(filters_frame, text="Certified").grid(row=0, column=3, sticky=tk.W)
-        self.certified_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.CERTIFICATES)
+        self.certified_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.CERTIFICATES, name="certified")
         self.certified_filter.grid(row=1, column=3)
         tk.Label(filters_frame, text="Rarity").grid(row=0, column=4, sticky=tk.W)
-        self.rarity_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.RARITIES)
+        self.rarity_filter = ttk.Combobox(filters_frame, values=("",) + rl_utils.RARITIES, name="rarity")
         self.rarity_filter.grid(row=1, column=4)
         tk.Label(filters_frame, text="Sort by").grid(row=0, column=5, sticky=tk.W)
         self.sort_by = ttk.Combobox(filters_frame, values=("",) + tuple(self.sort_options.keys()))
         self.sort_by.grid(row=1, column=5)
-        self.no_photo_items_var = tk.BooleanVar(value=False)
+        self.show_no_photo_items_var = tk.BooleanVar(value=False)
         self.no_photo_items_filter = ttk.Checkbutton(filters_frame, text="Show no photo items",
-                                                     variable=self.no_photo_items_var)
+                                                     variable=self.show_no_photo_items_var)
         self.no_photo_items_filter.grid(row=0, column=6, rowspan=2)
         filters_frame.grid_columnconfigure(tk.ALL, pad=5.0)
         self.name_filter.bind("<KeyRelease>", lambda _: self.on_filter_or_sort())
-        self.no_photo_items_var.trace_add("write", lambda var, index, mode: self.on_filter_or_sort())
+        self.show_no_photo_items_var.trace_add("write", lambda var, index, mode: self.on_filter_or_sort())
         self.slots = Slots(self, gameflip_api)
+        self.current_filter = self.slots.items
         for filter_ in (self.slot_filter, self.color_filter, self.certified_filter, self.rarity_filter,
                         self.sort_by):
             filter_.bind("<<ComboboxSelected>>", lambda _: self.on_filter_or_sort())
@@ -488,39 +482,59 @@ class Inventory(tk.Frame):
 
     def on_scroll(self):
         self.slots.load_items_able_to_load()
-        self.on_filter_or_sort()
+        self.on_scroll_filter()
+        self.apply_filter()
+
+    def on_scroll_filter(self):
+        self.filter_results["no_photo_items"] = set(filter(self.filter_no_photo_items, self.slots.items))
 
     def on_filter_or_sort(self):
-        self.slots.current_filter = self.slots.items
-
-        def add_attribute_filter(attribute, attribute_name, condition):
-            if attribute:
-                self.slots.current_filter = filter(
-                    lambda tk_item: condition(attribute, getattr(tk_item, attribute_name)),
-                    self.slots.current_filter)
-
-        add_attribute_filter(self.name_filter.get(), "name", rl_utils.contains_name)
-        add_attribute_filter(self.slot_filter.get(), "slot", slot_utils.is_exactly)
-        add_attribute_filter(self.color_filter.get(), "color", color_utils.is_exactly)
-        add_attribute_filter(self.certified_filter.get(), "certified", certified_utils.is_exactly)
-        add_attribute_filter(self.rarity_filter.get(), "rarity", rarity_utils.is_exactly)
-        if not self.no_photo_items_var.get():
-            self.slots.current_filter = filter(self.filter_no_photo_items, self.slots.current_filter)
-        items = list(self.slots.current_filter)
-        sort = self.sort_by.get()
-        if sort:
-            items.sort(key=self.sort_options[sort])
-
-        self.slots.remove_items_in_grid()
-        self.slots.insert_items_in_grid(items)
+        self.add_attribute_filter(self.name_filter, rl_utils.contains_name)
+        self.add_attribute_filter(self.slot_filter, slot_utils.is_exactly)
+        self.add_attribute_filter(self.color_filter, color_utils.is_exactly)
+        self.add_attribute_filter(self.certified_filter, certified_utils.is_exactly)
+        self.add_attribute_filter(self.rarity_filter, rarity_utils.is_exactly)
+        self.apply_filter()
         self.slots.scrollbar.set(0, 0)
 
-    @staticmethod
-    def filter_no_photo_items(tk_item: Item):
-        if tk_item.loaded_image and tk_item.get_state() == "notfound":
-            return False
-        else:
+    def update_grid(self):
+        for index, item in enumerate(self.current_filter):
+            column = index % self.slots.columns
+            row = index // self.slots.rows
+            item.grid_configure(column=column, row=row)
+
+    def apply_filter(self):
+        new_filter = set(self.slots.items)
+        for filter_result in self.filter_results.values():
+            new_filter.intersection_update(filter_result)
+        current_filter_set = set(self.current_filter)
+        items_to_remove = current_filter_set.difference(new_filter)
+        items_to_add = new_filter.difference(current_filter_set)
+        new_filter = list(new_filter)
+        sort = self.sort_by.get()
+        if sort:
+            new_filter.sort(key=self.sort_options[sort])
+        for item in items_to_remove:
+            item.grid_remove()
+        self.slots.insert_items_in_grid(items_to_add)
+        self.current_filter = new_filter
+        if len(items_to_remove) > 0:
+            self.update_grid()
+
+    def add_attribute_filter(self, filter_widget, condition):
+        attribute_name = filter_widget.winfo_name()
+        if attribute := filter_widget.get():
+            self.filter_results[attribute_name] = set(filter(
+                lambda tk_item: condition(attribute, getattr(tk_item, attribute_name)),
+                self.slots.items))
+        elif attribute_name in self.filter_results:
+            self.filter_results.pop(attribute_name)
+
+    def filter_no_photo_items(self, tk_item: Item):
+        if self.show_no_photo_items_var.get():
             return True
+        else:
+            return (tk_item.get_state() == "normal" and tk_item.loaded_image) or not tk_item.loaded_image
 
 
 class Trade(tk.Frame):
