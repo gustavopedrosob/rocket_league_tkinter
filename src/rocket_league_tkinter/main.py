@@ -24,7 +24,7 @@ async def get_image(url: str, size: int = 125):
     print(f"Creating image {url} at {start_time}")
     downloaded = 0
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
+        async with session.get(url, timeout=1) as response:
             buffer = tempfile.SpooledTemporaryFile()
             async for chunk in response.content.iter_chunked(1024):
                 downloaded += len(chunk)
@@ -400,8 +400,8 @@ class Slots(ScrollableFrame):
     def get_items_able_to_load(self):
         items_able_to_load = []
         for item in self.items:
-            y1 = item.winfo_rooty()
-            y2 = item.winfo_rooty() + item.winfo_height()
+            y1 = item.winfo_rooty() + item.winfo_height()
+            y2 = item.winfo_rooty()
             canvasy1 = self.canvas.winfo_rooty()
             canvasy2 = self.canvas.winfo_rooty() + self.canvas.winfo_height()
             if y1 > canvasy1 and y2 < canvasy2 and not item.loaded_image:
@@ -511,14 +511,12 @@ class Inventory(tk.Frame):
         current_filter_set = set(self.current_filter)
         items_to_remove = current_filter_set.difference(new_filter)
         items_to_add = new_filter.difference(current_filter_set)
-        new_filter = list(new_filter)
-        sort = self.sort_by.get()
-        if sort:
-            new_filter.sort(key=self.sort_options[sort])
+        self.current_filter = list(new_filter)
+        if sort := self.sort_by.get():
+            self.current_filter.sort(key=self.sort_options[sort])
         for item in items_to_remove:
             item.grid_remove()
         self.slots.insert_items_in_grid(items_to_add)
-        self.current_filter = new_filter
         if len(items_to_remove) > 0:
             self.update_grid()
 
